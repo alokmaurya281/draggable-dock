@@ -1,44 +1,26 @@
 import 'package:flutter/material.dart';
 
-/// Entrypoint of the application.
 void main() {
   runApp(const MyApp());
 }
 
-/// [Widget] building the [MaterialApp].
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
       home: Scaffold(
         body: Center(
           child: Dock(
-            items: const [
+            items: [
               Icons.person,
               Icons.message,
               Icons.call,
               Icons.camera,
               Icons.photo,
             ],
-            builder: (e, index, isDragging) {
-              return AnimatedScale(
-                scale: isDragging ? 1.2 : 1.0,
-                duration: const Duration(milliseconds: 300),
-                child: Container(
-                  constraints: const BoxConstraints(minWidth: 48),
-                  height: 48,
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color:
-                        Colors.primaries[e.hashCode % Colors.primaries.length],
-                  ),
-                  child: Center(child: Icon(e, color: Colors.white)),
-                ),
-              );
-            },
           ),
         ),
       ),
@@ -46,108 +28,138 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Dock of the reorderable [items].
-class Dock<T> extends StatefulWidget {
-  const Dock({
-    super.key,
-    this.items = const [],
-    required this.builder,
-  });
+class Dock extends StatefulWidget {
+  const Dock({super.key, required this.items});
 
-  /// Initial [T] items to put in this [Dock].
-  final List<T> items;
-
-  /// Builder building the provided [T] item.
-  final Widget Function(T item, int index, bool isDragging) builder;
+  final List<IconData> items;
 
   @override
-  State<Dock<T>> createState() => _DockState<T>();
+  State<Dock> createState() => _DockState();
 }
 
-/// State of the [Dock] used to manipulate the [_items].
-class _DockState<T> extends State<Dock<T>> with SingleTickerProviderStateMixin {
-  /// [T] items being manipulated.
-  late final List<T> _items = widget.items.toList();
+class _DockState extends State<Dock> {
+  late List<IconData> _items;
+  int? _hoveredIndex;
+  IconData? _draggingItem;
 
-  /// Currently dragging index.
-  int? _draggingIndex;
-
-  /// Dragged offset.
-  Offset? _dragOffset;
+  @override
+  void initState() {
+    super.initState();
+    _items = widget.items.toList();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(16),
         color: Colors.black12,
       ),
-      padding: const EdgeInsets.all(4),
-      child: Stack(
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(_items.length, (index) {
-              final isDragging = index == _draggingIndex;
-              return GestureDetector(
-                onPanStart: (details) {
-                  setState(() {
-                    _draggingIndex = index;
-                    _dragOffset = details.globalPosition;
-                  });
-                },
-                onPanUpdate: (details) {
-                  setState(() {
-                    _dragOffset = details.globalPosition;
-                    _rippleItems(index, details.delta.dx);
-                  });
-                },
-                onPanEnd: (_) {
-                  setState(() {
-                    _draggingIndex = null;
-                    _dragOffset = null;
-                  });
-                },
-                child: Transform.translate(
-                  offset:
-                      _draggingIndex == index ? Offset(0, -10) : Offset.zero,
-                  child: widget.builder(_items[index], index, isDragging),
-                ),
-              );
-            }),
-          ),
-          if (_draggingIndex != null && _dragOffset != null)
-            Positioned(
-              top: _dragOffset!.dy - 24,
-              left: _dragOffset!.dx - 24,
-              child: widget.builder(
-                _items[_draggingIndex!],
-                _draggingIndex!,
-                true,
-              ),
-            ),
-        ],
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(
+          _items.length,
+          (index) {
+            final item = _items[index];
+            return _buildDockItem(item, index);
+          },
+        ),
       ),
     );
   }
 
-  void _rippleItems(int draggingIndex, double deltaX) {
-    // Ripple logic: rearranges or shifts items based on drag direction.
-    final threshold = 30.0;
-    if (deltaX > threshold && draggingIndex < _items.length - 1) {
-      setState(() {
-        final temp = _items[draggingIndex];
-        _items[draggingIndex] = _items[draggingIndex + 1];
-        _items[draggingIndex + 1] = temp;
-        _draggingIndex = draggingIndex + 1;
-      });
-    } else if (deltaX < -threshold && draggingIndex > 0) {
-      setState(() {
-        final temp = _items[draggingIndex];
-        _items[draggingIndex] = _items[draggingIndex - 1];
-        _items[draggingIndex - 1] = temp;
-        _draggingIndex = draggingIndex - 1;
-      });
+  Widget _buildDockItem(IconData item, int index) {
+    final isHovered = _hoveredIndex == index;
+
+    return Draggable<IconData>(
+      data: item,
+      feedback: _buildDockIcon(item, isHovered: true),
+      childWhenDragging: const SizedBox.shrink(),
+      onDragStarted: () {
+        setState(() {
+          _draggingItem = item;
+        });
+      },
+      onDraggableCanceled: (_, __) {
+        setState(() {
+          _draggingItem = null;
+        });
+      },
+      onDragEnd: (_) {
+        setState(() {
+          _draggingItem = null;
+        });
+      },
+      child: DragTarget<IconData>(
+        onAccept: (receivedItem) {
+          setState(() {
+            final oldIndex = _items.indexOf(receivedItem);
+            _items.removeAt(oldIndex);
+            _items.insert(index, receivedItem);
+          });
+        },
+        builder: (context, candidateData, rejectedData) {
+          return MouseRegion(
+            onEnter: (_) => setState(() => _hoveredIndex = index),
+            onExit: (_) => setState(() => _hoveredIndex = null),
+            child: AnimatedScale(
+              scale: _getScaleFactor(index),
+              duration: const Duration(milliseconds: 300),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                curve: Curves.easeInOut,
+                child: _buildDockIcon(item, isHovered: false),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Determines the scale factor based on the hovered index
+  double _getScaleFactor(int index) {
+    if (_hoveredIndex == null) return 1.0;
+
+    // Calculate the distance from the hovered index
+    final distance = (index - _hoveredIndex!).abs();
+
+    // Base scale factor for hovered item
+    double scaleFactor = 1.0;
+
+    // Apply scaling: closer items scale more, farther scale less
+    if (distance == 0) {
+      scaleFactor = 1.25; // Item directly under the cursor scales up most
+    } else if (distance == 1) {
+      scaleFactor = 1.15; // Next items scale a bit less
+    } else if (distance == 2) {
+      scaleFactor = 1.1; // Items two indices away scale even less
+    } else {
+      scaleFactor =
+          1.0; // Items farthest from the hovered index stay at normal scale
     }
+
+    return scaleFactor;
+  }
+
+  Widget _buildDockIcon(IconData icon, {bool isHovered = false}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+      margin:
+          EdgeInsets.symmetric(horizontal: _draggingItem == icon ? 16.0 : 8.0),
+      decoration: BoxDecoration(
+        color: Colors.primaries[icon.hashCode % Colors.primaries.length],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(
+        icon,
+        color: Colors.white,
+        size: isHovered ? 30 : 24,
+      ),
+    );
   }
 }

@@ -40,7 +40,25 @@ class Dock extends StatefulWidget {
 class _DockState extends State<Dock> {
   late List<IconData> _items;
   int? _hoveredIndex;
-  IconData? _draggingItem;
+  IconData? draggingItem;
+  double dragOffsetX = 0;
+  double dragOffsetY = 0;
+  bool isHorizontalDrag = false;
+  double placeholderOffsetX = 0;
+
+  void moveItemToPlaceholder(int direction) {
+    // setState(() {
+    //   if (draggingItem != null) {
+    //     final oldIndex = _items.indexOf(draggingItem!);
+    //     final newIndex = (oldIndex + direction).clamp(0, _items.length - 1);
+
+    //     if (oldIndex != newIndex) {
+    //       _items.removeAt(oldIndex);
+    //       _items.insert(newIndex, draggingItem!);
+    //     }
+    //   }
+    // });
+  }
 
   @override
   void initState() {
@@ -50,20 +68,24 @@ class _DockState extends State<Dock> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: Colors.black12,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(
-          _items.length,
-          (index) {
-            final item = _items[index];
-            return _buildDockItem(item, index);
-          },
+    return AnimatedScale(
+      scale: _hoveredIndex == null ? 1.0 : 1.05,
+      duration: const Duration(milliseconds: 300),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.black12,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(
+            _items.length,
+            (index) {
+              final item = _items[index];
+              return _buildDockItem(item, index);
+            },
+          ),
         ),
       ),
     );
@@ -75,20 +97,45 @@ class _DockState extends State<Dock> {
     return Draggable<IconData>(
       data: item,
       feedback: _buildDockIcon(item, isHovered: true),
-      childWhenDragging: const SizedBox.shrink(),
+      childWhenDragging: Transform.translate(
+        offset: Offset(placeholderOffsetX, 0),
+        child: _buildPlaceholder(isInvisible: !isHorizontalDrag),
+      ),
       onDragStarted: () {
         setState(() {
-          _draggingItem = item;
+          draggingItem = item;
+          placeholderOffsetX = 0;
         });
       },
-      onDraggableCanceled: (_, __) {
+      onDragUpdate: (details) {
         setState(() {
-          _draggingItem = null;
+          dragOffsetX += details.delta.dx;
+          dragOffsetY += details.delta.dy;
+
+          isHorizontalDrag = dragOffsetY > -48.0;
+
+          if (isHorizontalDrag) {
+            placeholderOffsetX += details.delta.dx;
+            // if (placeholderOffsetX > 50) {
+            //   moveItemToPlaceholder(1);
+            //   placeholderOffsetX = 0;
+            // } else if (placeholderOffsetX < -50) {
+            //   moveItemToPlaceholder(-1);
+            //   placeholderOffsetX = 0;
+            // }
+          }
         });
       },
       onDragEnd: (_) {
         setState(() {
-          _draggingItem = null;
+          draggingItem = null;
+          placeholderOffsetX = 0;
+        });
+      },
+      onDraggableCanceled: (_, __) {
+        setState(() {
+          draggingItem = null;
+          placeholderOffsetX = 0;
         });
       },
       child: DragTarget<IconData>(
@@ -110,7 +157,12 @@ class _DockState extends State<Dock> {
                 duration: const Duration(milliseconds: 300),
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 curve: Curves.easeInOut,
-                child: _buildDockIcon(item, isHovered: false),
+                transform: Matrix4.translationValues(
+                  0.0,
+                  _getHoverTranslationY(index),
+                  0.0,
+                ),
+                child: _buildDockIcon(item, isHovered: isHovered),
               ),
             ),
           );
@@ -119,47 +171,72 @@ class _DockState extends State<Dock> {
     );
   }
 
-  // Determines the scale factor based on the hovered index
   double _getScaleFactor(int index) {
     if (_hoveredIndex == null) return 1.0;
 
-    // Calculate the distance from the hovered index
     final distance = (index - _hoveredIndex!).abs();
 
-    // Base scale factor for hovered item
     double scaleFactor = 1.0;
 
-    // Apply scaling: closer items scale more, farther scale less
     if (distance == 0) {
-      scaleFactor = 1.25; // Item directly under the cursor scales up most
+      scaleFactor = 1.15;
     } else if (distance == 1) {
-      scaleFactor = 1.15; // Next items scale a bit less
+      scaleFactor = 1.1;
     } else if (distance == 2) {
-      scaleFactor = 1.1; // Items two indices away scale even less
+      scaleFactor = 1.05;
     } else {
-      scaleFactor =
-          1.0; // Items farthest from the hovered index stay at normal scale
+      scaleFactor = 1.0;
     }
 
     return scaleFactor;
   }
 
+  double _getHoverTranslationY(int index) {
+    if (_hoveredIndex == null) return 0.0;
+
+    final difference = (index - _hoveredIndex!).abs();
+    double translationY = 0.0;
+
+    if (difference == 0) {
+      translationY = -10.0;
+    } else if (difference == 1) {
+      translationY = -5.0;
+    }
+
+    return translationY;
+  }
+
   Widget _buildDockIcon(IconData icon, {bool isHovered = false}) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 150),
       padding: const EdgeInsets.all(8),
       constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-      margin:
-          EdgeInsets.symmetric(horizontal: _draggingItem == icon ? 16.0 : 8.0),
+      margin: const EdgeInsets.symmetric(horizontal: 3.0),
       decoration: BoxDecoration(
         color: Colors.primaries[icon.hashCode % Colors.primaries.length],
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Icon(
-        icon,
-        color: Colors.white,
-        size: isHovered ? 30 : 24,
+      child: AnimatedScale(
+        scale: isHovered ? 1.01 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeInOut,
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: isHovered ? 28 : 24,
+        ),
       ),
     );
+  }
+
+  Widget _buildPlaceholder({bool isInvisible = false}) {
+    return isInvisible
+        ? const SizedBox.shrink()
+        : AnimatedContainer(
+          width: 48,
+            transform: Matrix4.translationValues(placeholderOffsetX, 0, 0),
+          duration: const Duration(milliseconds: 300), 
+          child: const Icon(Icons.add, color: Colors.transparent,)
+          );
   }
 }
